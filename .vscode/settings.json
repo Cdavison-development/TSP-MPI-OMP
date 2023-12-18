@@ -1,5 +1,12 @@
 {
     "files.associations": {
-        "time.h": "c"
+        "time.h": "c",
+        "float.h": "c",
+        "stdlib.h": "c",
+        "utils.h": "c",
+        "coordreader.h": "c",
+        "array": "c",
+        "bitset": "c",
+        "initializer_list": "c"
     }
 }
