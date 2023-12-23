@@ -4,7 +4,7 @@
 #SBATCH --export=ALL
 #SBATCH -p course
 #SBATCH -t 5
-
+#SBATCH --cpus-per-task=32
 # ADD INSTRUCTIONS TO LOAD THE MODULES HERE
 # Example: module load mpi
 module load compilers/intel/2019u5 
@@ -16,7 +16,7 @@ mpicc -std=c99 -fopenmp main-mpi.c coordReader.c ompcInsertion.c ompfInsertion.c
 
 
 # SLURM_NTASKS is given by the -n flag when using sbatch. 
-procs=${SLURM_NTASKS:-1, SLURM_CPUS_PER_TASK: -1}
+procs=${SLURM_NTASKS:-1}
 #export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 #echo using ${OMP_NUM_THREADS} OpenMP threads
 # RUN THE PROGRAM HERE USING $procs WITH THE -np FLAG.
