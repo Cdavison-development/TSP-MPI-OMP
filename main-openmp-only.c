@@ -1,162 +1,129 @@
-//#include "ompcInsertion.c"
-//#include "ompfInsertion.c"
-//#include "ompnAddition.c"
+// libraries and header files
 
 #include <stdio.h>
 #include <stdlib.h>
-//#include "utils.h"
 #include <omp.h>
 #include <math.h>
 #include <float.h>
 #include <string.h>
-#include "coordReader.h"
+
 
 #ifndef OMPCINSERTION_H_
 #define OMPCINSERTION_H_
-    int *cheapestInsertion(double **distanceMatrix, int numOfCoords, int startVertex);
+    int *cheapestInsertion(double *matrix1D, int numOfCoords, int startVertex);
 #endif
 #ifndef OMPFINSERTION_H_
 #define OMPFINSERTION_H_
-    int *farthestInsertion(double **distanceMatrix, int numOfCoords, int startVertex);
+    int *farthestInsertion(double *matrix1D, int numOfCoords, int startVertex);
 #endif
 #ifndef OMPNADDITION_H_
 #define OOMPNADDITION_H_
-    int *nearestInsertion(double **distanceMatrix, int numOfCoords, int startVertex);
+    int *nearestInsertion(double *matrix1D, int numOfCoords, int startVertex);
+#endif
+#ifndef coordReader_H_
+#define coordReader_H_
+    int readNumOfCoords(char *filename);
+    double **readCoords(char *filename, int numOfCoords);           
+    void writeTourToFile(int *tour, int tourLength, char *filename);
 #endif
 
-
-
- double euclideanDistance(double x1, double y1, double x2, double y2) {
+//calculates the euclidean distance between two points
+double EuclideanDistance(double x1, double y1, double x2, double y2) {
     double dx = x2 - x1;
     double dy = y2 - y1;
     return sqrt(dx * dx + dy * dy);
 }
-
-/* double **generateDistanceMatrix(double **coords, int numOfCoords) {
-    double **matrix = (double **)malloc(numOfCoords * sizeof(double *));
+//generates the distance matrix using a 1D array to ensure contiguous memory
+void GenerateDistanceMatrix(double *matrix1D,double **coords, int numOfCoords) {
+    double (*matrix2D)[numOfCoords] = (double (*)[numOfCoords])matrix1D;
+    //initialize vertices where i == j to 0
     for (int i = 0; i < numOfCoords; i++) {
-        matrix[i] = (double *)malloc(numOfCoords * sizeof(double));
+        for (int j = 0; j < numOfCoords; j++) {
+            matrix2D[i][j] = 0.0; 
+        }
     }
+    //calculate the distance between each pair of vertices
+    
     for (int i = 0; i < numOfCoords; i++) {
-        matrix[i][i] = 0; // Distance from a point to itself is 0
         for (int j = i + 1; j < numOfCoords; j++) {
-            matrix[i][j] = euclideanDistance(coords[i][0], coords[i][1], coords[j][0], coords[j][1]);
-            matrix[j][i] = matrix[i][j]; // Use symmetry, avoid redundant calculation
+            matrix2D[i][j] = EuclideanDistance(coords[i][0], coords[i][1], coords[j][0], coords[j][1]);
+            matrix2D[j][i] = matrix2D[i][j]; // Use symmetry, avoid redundant calculation
         }
     }
-    return matrix;
+
 }  
-
-
-double calculateTotalDistance(int *tour, double **distanceMatrix, int tourLength) {
-    double totalDistance = 0.0;
+double calculateTotalDistance(int *tour, double *matrix1D, int tourLength,  int numOfCoords) {
+    double totalDistance = 0.0; //initialize distance variable
+    //loop through the all vertexes in the tour other than the last vertex
+    
     for (int i = 0; i < tourLength - 1; i++) {
-        totalDistance += distanceMatrix[tour[i]][tour[i + 1]];
+        totalDistance += matrix1D[tour[i] * numOfCoords + tour[i + 1]]; //find value of i in tour and add to total distance
     }
-    totalDistance += distanceMatrix[tour[tourLength - 1]][tour[0]]; // Complete the loop
-    printf("Total distance: %f\n", totalDistance);
-    return totalDistance;
-}
+   totalDistance += matrix1D[tour[tourLength - 1] * numOfCoords + tour[0]]; //add the final vertex in the tour to the starting vertex
+    return totalDistance; //return the total distance
+} 
 
+//pointer to function for the insertion algorithms
+typedef int* (*InsertionFunction)(double *, int, int);
 
-/* void findBestTour(double **distanceMatrix, int numOfCoords, int alg, char *ciFilename, char *fiFilename, char *niFilename) {
-    double globalBestCost = DBL_MAX;
-    int *globalBestTour = malloc((numOfCoords + 1) * sizeof(int));
-    
-
-    for (int startVertex = 0; startVertex < numOfCoords; startVertex++) {
-        int *currentTour;
-        double currentCost;
-
-        switch (alg) {
-            case 0:
-                currentTour = cheapestInsertion(distanceMatrix, numOfCoords, startVertex);
-                break;
-            case 1:
-                currentTour = farthestInsertion(distanceMatrix, numOfCoords, startVertex);
-                break;
-            case 2:
-                currentTour = nearestInsertion(distanceMatrix, numOfCoords, startVertex);
-                break;
-        }
-
-        currentCost = calculateTotalDistance(currentTour, distanceMatrix, numOfCoords);
-
-        if (currentCost < globalBestCost) {
-            globalBestCost = currentCost;
-            memcpy(globalBestTour, currentTour, (numOfCoords + 1) * sizeof(int));
-        }
-
-        free(currentTour);
-    }
-
-    printf("Best tour for algorithm %d: ", alg);
-    for (int i = 0; i < numOfCoords + 1; i++) {
-        printf("%d ", globalBestTour[i]);
-    }
-    printf("with a cost of: %f\n", globalBestCost);
-
-    switch (alg) {
-        case 0:
-            writeTourToFile(globalBestTour, numOfCoords + 1, ciFilename);
-            break;
-        case 1:
-            writeTourToFile(globalBestTour, numOfCoords + 1, fiFilename);
-            break;
-        case 2:
-            writeTourToFile(globalBestTour, numOfCoords + 1, niFilename);
-            break;
-    }
-
-    free(globalBestTour);
-} */
-
-typedef int* (*InsertionFunction)(double **, int, int);
-void findBestTour(double **distanceMatrix, int numOfCoords, int hrs,char *filenames[]) {
+void FindBestTour(double *matrix1D, int numOfCoords, int hrs,char *filenames[]) {
+    //array of function points for each insertion algorithm
     InsertionFunction insertionFunctions[3] = {cheapestInsertion, farthestInsertion, nearestInsertion};
-    
+    //initialise the global variables for the best tour and its cost
     double globalBestCost = DBL_MAX;
+    //allocate memory for the global best tour
     int *globalBestTour = malloc((numOfCoords + 1) * sizeof(int));
     
-
+    //iterate over the number of coordinates and find the best tour for each insertion algorithm
     for (int startVertex = 0; startVertex < numOfCoords; startVertex++) {
-        int *currentTour = insertionFunctions[hrs](distanceMatrix, numOfCoords, startVertex);
-        double currentCost = calculateTotalDistance(currentTour, distanceMatrix, numOfCoords);
+        //calculate current tour using the current insertion algorithm
+        int *currentTour = insertionFunctions[hrs](matrix1D, numOfCoords, startVertex);
+        //calculate the distance of the tour using the calculateTotalDistance function
+        double currentCost = calculateTotalDistance(currentTour, matrix1D, numOfCoords+1, numOfCoords);
 
+        //update global values if current values have lower costs
         if (currentCost < globalBestCost) {
             globalBestCost = currentCost;
             memcpy(globalBestTour, currentTour, (numOfCoords + 1) * sizeof(int));
         }
-
+        //free allocated memory for current tour
         free(currentTour);
     }
-
+    //write the best tour to the output file
     char *filename = filenames[hrs];
     writeTourToFile(globalBestTour, numOfCoords + 1, filename);
-
+    //free allocated memory for global best tour
     free(globalBestTour);
 }
+
+
 int main(int argc, char *argv[]) {
     
+    //check if the correct number of arguments are used
     if (argc != 5) {
-        printf("Usage: %s <coord_file> <cheapest output file> <furthest output file> <nearest output file>\n", argv[0]);
-        return 1;
+        printf("USE : %s <coord_file> <cheapest insertion output file> <furthest insertion output file> <nearest insertion output file>\n", argv[0]);
+        return 1; //exit if incorrect amount of arguments are used
     }
 
-    char *inputFile = argv[1];
-    
+    //Read num of coords and coords from the input file
+    char *inputFile = argv[1];    
     int numOfCoords = readNumOfCoords(inputFile);
     double **coords = readCoords(inputFile, numOfCoords);
-    double **distanceMatrix = generateDistanceMatrix(coords, numOfCoords);
+    //generates dfistance matrix using the coords
+    double *matrix1D = malloc(numOfCoords * numOfCoords * sizeof(double));
+     GenerateDistanceMatrix(matrix1D, coords, numOfCoords);
+
+    //set up filenames for output files
     char *filenames[3] = {argv[2], argv[3], argv[4]};
 
-    for (int alg = 0; alg < 3; alg++) {
-        findBestTour(distanceMatrix, numOfCoords, alg, filenames);
+    //find the best tour for each insertion algorithm
+    for (int hrs = 0; hrs < 3; hrs++) {
+        FindBestTour(matrix1D, numOfCoords, hrs, filenames);
     }
 
-    return 0;
+    return 0; //exit program
 }
 
-    // ... Free any other allocated memory and clean up ...
+    
 
    

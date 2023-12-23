@@ -1,47 +1,20 @@
+//libaries and header files 
 #include <stdio.h>
 #include <math.h>
 #include <stdlib.h>
 #include <float.h>
 #include <time.h>
 #include <string.h>
-#include "utils.h"
-#include "coordReader.h"
 #include <omp.h>
-/* #ifndef COORDREADER_H
-#define COORDREADER_H
-int readNumOfCoords(char *filename);
-double **readCoords(char *filename, int numOfCoords);
-void writeTourToFile(int *tour, int tourLength, char *filename);
-#endif  */
+#ifndef coordReader_H_
+#define coordReader_H_
+    int readNumOfCoords(char *filename);
+    double **readCoords(char *filename, int numOfCoords);           
+    void writeTourToFile(int *tour, int tourLength, char *filename);
+#endif
 
-
-
-/* double euclideanDistance(double x1, double y1, double x2, double y2) {
-    double dx = x2 - x1;
-    double dy = y2 - y1;
-    return sqrt(dx * dx + dy * dy);
-}
-
-
-//Function to generate a distance matrix given a set of coordinates
-double **generateDistanceMatrix(double **coords, int numOfCoords) {
-    //Dynamically allocate memory for 2-D array
-    double **matrix = (double **)malloc(numOfCoords * sizeof(double *));
-    for (int i = 0; i < numOfCoords; i++) {
-        matrix[i] = (double *)malloc(numOfCoords * sizeof(double));
-    }
-    //generate empty distance matrix of size numOfCoords using parallel for loop  to distribute loop iterations within the team of threads
-    #pragma omp parallel for
-    for (int i = 0; i < numOfCoords; i++) {
-        matrix[i][i] = 0; // Distance from a point to itself is 0
-        for (int j = i + 1; j < numOfCoords; j++) {
-            matrix[i][j] = euclideanDistance(coords[i][0], coords[i][1], coords[j][0], coords[j][1]);
-            matrix[j][i] = matrix[i][j]; // Use symmetry, avoid redundant calculation
-        }
-    }
-    return matrix;
-} 
- */
+/* Checks is vertex is in tour by iterating over the tour and comparing each vertex
+if the vertex is in the tour, returns 1, else returns 0 */
 int IsVertexInTour(int vertex, int *tour, int tourSize) {
     for (int i = 0; i < tourSize; i++) {       
         if (tour[i] == vertex) {           
@@ -51,78 +24,87 @@ int IsVertexInTour(int vertex, int *tour, int tourSize) {
     return 0;
 } 
 
-
+//Structure to group certain global variables relevant to the NearestNotInTour function
   typedef struct {
-    int global_nearest_vertex;
-    int global_closest_tour_vertex;
-    double global_min_distance;
-    //int local_nearest_vertex;
-    //int local_closest_tour_vertex;
-    //double local_min_distance;
+    int globalNearestVertex;
+    int globalClosestTourVertex;
+    double globalMinDistance;
 } NearestVertexResult;
 
-
+/* 
+    iterates over NumOfCoords and checks if the vertex is in the tour using the IsVertexInTour function
+    if it is not in the tour, it finds the distance to each vertex and if the distance is less than the current min distance
+    it updates the min distance and the nearest vertex, eventually finding the nearest vertex not in the tour
+     */
  NearestVertexResult NearestNotInTour(double *matrix1D, int *tour, int numOfCoords, int tourSize) {
+    //initialise the result struct
     NearestVertexResult result;
-    result.global_nearest_vertex = -1;
-    result.global_closest_tour_vertex = -1;
-    result.global_min_distance = DBL_MAX;
+    //initialise the global variables to be used in the parallel section
+    result.globalNearestVertex = -1;
+    result.globalClosestTourVertex = -1;
+    result.globalMinDistance = DBL_MAX;
 
+    //parallel section to find the nearest vertex not in the tour
     #pragma omp parallel
     {
-        int local_nearest_vertex = -1;
-        int local_closest_tour_vertex = -1;
-        double local_min_distance = DBL_MAX;  
-
+        //initialise the local variables to be used within each thread to find the nearest vertex not currently in the tour
+        int localNearestVertex = -1;
+        int localClosestTourVertex = -1;
+        double localMinDistance = DBL_MAX;  
+        //parallel for loop to find closest vertex not currently in tour
         #pragma omp for
         for (int i = 0; i < numOfCoords; i++) {
-            if (!IsVertexInTour(i, tour, tourSize)) {
-                //printf("Vertex %d is not in the tour.\n", i);
+            if (!IsVertexInTour(i, tour, tourSize)) { //params are vertex, tour, tourSize                
                 for (int j = 0; j < tourSize; j++) { // Iterate over current tour size
-                    double distance = matrix1D[i * numOfCoords + tour[j]]; // Use tour[j] to get the vertex number
-                  //printf("Checking distance from vertex %d (not in tour) to vertex %d (in tour): %f\n", i, tour[j], distance);
-                    if (distance < local_min_distance) {
-                        local_min_distance = distance;
-                        local_nearest_vertex = i;
-                        local_closest_tour_vertex = j; // j is the index in the tour
-                    //printf("New nearest vertex: %d with distance: %f, Closest tour vertex (index): %d\n", i, distance, j);
+                    double distance = matrix1D[i * numOfCoords + tour[j]]; // Finding Distance using the 1D matrix defined in main-mpi, tour[j] used to get index number              
+                    if (distance < localMinDistance) {
+                        //update the local min distance, local nearest vertex and local closest tour vertex
+                        localMinDistance = distance;  
+                        localNearestVertex = i;
+                        localClosestTourVertex = j;                     
                     }
                 }
             }
         }
+        //critical section to update the global min distance, global nearest vertex and global closest tour vertex
         #pragma omp critical
         {
-            if (local_min_distance < result.global_min_distance) {
-                result.global_min_distance = local_min_distance;
-                result.global_nearest_vertex = local_nearest_vertex;
-                result.global_closest_tour_vertex = local_closest_tour_vertex;
+            if (localMinDistance < result.globalMinDistance) {
+                result.globalMinDistance = localMinDistance;
+                result.globalNearestVertex = localNearestVertex;
+                result.globalClosestTourVertex = localClosestTourVertex;
             }
         }
     }
+    //return the result struct
     return result;
 }  
   
-
-void OptimalPositionInsertion(double *matrix1D, int vertex, int *tour, int size, int closest_tour_vertex, int numOfCoords) {
+/* 
+    iterates over the tour and finds the optimal insertion position for the vertex
+    calculates the price of insertion at either side of the closest tour vertex, found by the NearestNotInTour function
+    
+    as the insertion is rather cheap,parallelisation is not necessary and causes an increase in processing time 
+ */
+void OptimalPositionInsertion(double *matrix1D, int vertex, int *tour, int size, int closestTourVertex, int numOfCoords) {
+    //initialise variables
     double minIncrease = DBL_MAX;
-    int OptimalPosition = -1;
+    int optimalPosition = -1;
 
-    //printf("Closest tour vertex index: %d, Vertex number: %d\n", closest_tour_vertex, tour[closest_tour_vertex]);
+    /* 
+    handling of an edge case in which the checking of the starting and ending vertex is made due to a situation
+    where the starting and ending vertex were percieved as neighbours and were being compared as so. 
+    */
+    if (closestTourVertex == 0) {   
+        int lastVertexAtEnd = tour[size - 2]; //finds the vertex to compare V[max] to
+        int firstVertexAfterStart = tour[1]; // finds the vertex to compare V[0] to
 
-    if (closest_tour_vertex == 0) {
-        // Special handling when the closest tour vertex is the start of the tour
-        int lastVertexAtEnd = tour[size - 2]; // Second-to-last vertex (339)
-        int firstVertexAfterStart = tour[1]; // First vertex after start (248)
-
-        // Calculate increase for inserting between last vertex and start
-        //double increaseEnd = distanceMatrix[lastVertexAtEnd][vertex] + distanceMatrix[vertex][tour[0]] - distanceMatrix[lastVertexAtEnd][tour[0]];
-        //printf("Checking position between vertices %d and %d, Increase: %f\n", lastVertexAtEnd, tour[0], increaseEnd);
+        //manual calculation of the distance between v[max] and v[max - 1]
         double increaseEnd = matrix1D[lastVertexAtEnd * numOfCoords + vertex]
                             + matrix1D[vertex * numOfCoords + tour[0]] 
                             - matrix1D[lastVertexAtEnd * numOfCoords + tour[0]];
-        // Calculate increase for inserting between start and first vertex after start
-        //double increaseStart = distanceMatrix[tour[0]][vertex] + distanceMatrix[vertex][firstVertexAfterStart] - distanceMatrix[tour[0]][firstVertexAfterStart];
-        //printf("Checking position between vertices %d and %d, Increase: %f\n", tour[0], firstVertexAfterStart, increaseStart);
+        
+        //manual calculation of the distance between v[0] and v[1]
         double increaseStart = matrix1D[tour[0] * numOfCoords + vertex] 
                      + matrix1D[vertex * numOfCoords + firstVertexAfterStart] 
                      - matrix1D[tour[0] * numOfCoords + firstVertexAfterStart];
@@ -130,105 +112,86 @@ void OptimalPositionInsertion(double *matrix1D, int vertex, int *tour, int size,
         // Compare and set the optimal position
         if (increaseEnd < minIncrease) {
             minIncrease = increaseEnd;
-            OptimalPosition = size - 1;
+            optimalPosition = size - 1;
         }
         if (increaseStart < minIncrease) {
             minIncrease = increaseStart;
-            OptimalPosition = 0;
+            optimalPosition = 0;
         }
     } else {
-        // Regular case
+        //iterates over the two potential insertion points, these being the positions before and after the closest tour vertex
         for (int i = 0; i < 2; i++) {
-            int pos = (closest_tour_vertex + i) % size;
-            int lastVertex = (pos == 0) ? tour[size - 2] : tour[pos - 1];
-            int nextVertex = tour[pos];
+            int pos = (closestTourVertex + i) % size; // ensures the cyclical nature of the tour by wrapping around to the start of the tour if it is greater than tour size
+            int lastVertex = tour[pos - 1]; // last vertex is equal to the vertex before the current position 
+            int nextVertex = tour[pos]; // next vertex is equal to the current position
 
-            //double increase = distanceMatrix[lastVertex][vertex] + distanceMatrix[vertex][nextVertex] - distanceMatrix[lastVertex][nextVertex];
-            //printf("Checking position between vertices %d and %d, Increase: %f\n", lastVertex, nextVertex, increase);
+            //calculates the increase in distance by inserting the vertex at the current position using the 1D array defined in main-mpi
             double increase = matrix1D[lastVertex * numOfCoords + vertex] 
                 + matrix1D[vertex * numOfCoords + nextVertex] 
                 - matrix1D[lastVertex * numOfCoords + nextVertex];
 
+            //updates values if the increase is less than the current min increase
             if (increase < minIncrease) {
                 minIncrease = increase;
-                OptimalPosition = pos;
+                optimalPosition = pos;
             }
         }
     }
 
-    // Insert vertex at the optimal position
-    if (OptimalPosition >= 0) {
-        for (int j = size; j > OptimalPosition; j--) {
+    //inserts the vertex at the optimal position
+    if (optimalPosition >= 0) {
+        for (int j = size; j > optimalPosition; j--) {
             tour[j] = tour[j - 1];
         }
-        tour[OptimalPosition] = vertex;
-        //printf("Inserted vertex %d at position %d\n", vertex, OptimalPosition);
-    } else {
-        //printf("No optimal position found for vertex %d\n", vertex);
+        tour[optimalPosition] = vertex;
+        
     }
 } 
 
 
-
-int *nearestInsertion(double *matrix1D, int numOfCoords, int start_vertex) {
+//nearest insertion function makes use of the NearestNotInTour and OptimalPositionInsertion functions to find the optimal tour
+int *nearestInsertion(double *matrix1D, int numOfCoords, int startVertex) {
+    //allocate memory for all arrays
     double (*matrix2D)[numOfCoords] = (double (*)[numOfCoords])matrix1D;
     int *visited = (int *)calloc(numOfCoords, sizeof(int));
     int *tour = (int *)malloc((numOfCoords + 1) * sizeof(int));
+    printf("Starting nearestInsertion\n");
+    //initalise variables
+    double minDistance = DBL_MAX;
+    int firstNearestVertex = -1;
 
-    double min_distance = DBL_MAX;
-    int first_nearest_vertex = -1;
-
-   
+   //finds the first nearest vertex to the start vertex
     for (int vertex = 0; vertex < numOfCoords; vertex++) {
-    if (vertex != start_vertex) {
-        int index = start_vertex * numOfCoords + vertex;
-        if (matrix1D[index] < min_distance) {
-            min_distance = matrix1D[index];
-            first_nearest_vertex = vertex;
+        if (vertex != startVertex) {
+            if (matrix1D[startVertex * numOfCoords + vertex] < minDistance) {
+                minDistance = matrix1D[startVertex * numOfCoords + vertex];
+                firstNearestVertex = vertex;
+            }
         }
     }
-}
 
-    
-    visited[start_vertex] = 1;
-    visited[first_nearest_vertex] = 1;
-    tour[0] = start_vertex;
-    tour[1] = first_nearest_vertex;
-    tour[2] = start_vertex; // Completing the initial loop
+    //creates the initial loop
+    visited[startVertex] = 1;
+    visited[firstNearestVertex] = 1;
+    tour[0] = startVertex;
+    tour[1] = firstNearestVertex;
+    tour[2] = startVertex; 
     int tour_size = 3;
 
-    /* printf("Initial tour: ");
-    for (int i = 0; i < tour_size; i++) {
-    printf("%d ", tour[i]);
-}
-printf("\n"); */
 
-    //printf("Starting vertex: %d\n", start_vertex);
-    //printf("First nearest vertex to start: %d\n", first_nearest_vertex);
-    
-    while (tour_size < numOfCoords + 1) {
-        //printf("Iteration: %d\n", k);
-        //printf("numOfCoords: %d\n",numOfCoords);
-       // printf("tour_size: %d\n",tour_size);
+    /* while the tour is incomplete, complete the full nearest insertion process of identifying the nearest vertex not in the initial tour,
+    and finding the optimal position to insert it. 
+    */
+    while (tour_size < numOfCoords + 1) {        
         NearestVertexResult nearestResult = NearestNotInTour(matrix1D, tour, numOfCoords,tour_size);
-        int next_vertex = nearestResult.global_nearest_vertex;
-        int closest_tour_vertex = nearestResult.global_closest_tour_vertex;
-        double distance = matrix1D[next_vertex * numOfCoords + tour[closest_tour_vertex]];
-        
-         //printf("Next nearest vertex not in tour: %d (Distance to closest tour vertex %d: %f)\n", 
-                //next_vertex, tour[closest_tour_vertex], distance);
-        
-
-        //printf("Next nearest vertex not in tour: %d\n", next_vertex);
-        OptimalPositionInsertion(matrix1D, next_vertex, tour, tour_size, closest_tour_vertex, numOfCoords);
-        //printf("Inserted vertex %d at position %d in the tour\n", next_vertex, tour_size);
-        visited[next_vertex] = 1;
-        //printf("visited[next_vertex]: %d\n",visited[next_vertex]);
+        int nextVertex = nearestResult.globalNearestVertex;
+        int closestTourVertex = nearestResult.globalClosestTourVertex;
+        double distance = matrix1D[nextVertex * numOfCoords + tour[closestTourVertex]];        
+        OptimalPositionInsertion(matrix1D, nextVertex, tour, tour_size, closestTourVertex, numOfCoords);       
+        visited[nextVertex] = 1;       
         tour_size++;
-        //printf("tour_size: %d\n",tour_size);
-
     }
-
+    //return tour and free allocated memory
     free(visited);
     return tour;
 } 

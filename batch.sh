@@ -1,8 +1,5 @@
 #!/bin/bash -l
 
-#-----The '#' followed by SBATCH are SLURM prefixes. They are not comments-----#
-#-----It is worth taking note of them when you write your own batch files------#
-
 #SBATCH -D ./
 #SBATCH --export=ALL
 #SBATCH -p course
@@ -15,7 +12,7 @@ module load mpi/intel-mpi/2019u5/bin
 
 # ADD COMPILER INSTRUCTION HERE.
 # Example: mpicc -o my_mpi_program my_mpi_program.c
-mpicc -std=c99 -fopenmp main-mpi.c coordReader.c ompcInsertion.c ompfInsertion.c ompnAddition.c  -g -o mpi -lm
+mpicc -std=c99 -fopenmp main-mpi.c coordReader.c ompcInsertion.c ompfInsertion.c ompnAddition.c -o mpi -lm
 
 
 # SLURM_NTASKS is given by the -n flag when using sbatch. 
